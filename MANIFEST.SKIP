@@ -1,0 +1,7 @@
+^MANIFEST\.bak$
+Makefile(\.old)?$
+^Pod-Webserver-\d
+\.rej$
+CVS
+blib
+~

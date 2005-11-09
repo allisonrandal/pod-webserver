@@ -1,0 +1,15 @@
+Revision history for Perl module Pod::Webserver
+                                        Time-stamp: "2004-06-20 23:48:52 ADT"
+
+2004-06-20  Sean M. Burke  sburke@cpan.org
+
+	* Release 3.03 -- no code changes; I merely added some extra docs
+	about -T and security and @INC things.
+
+	Thanks for all your supportive email!  I am surprised by what a
+	hit this module has become!
+
+
+2004-05-25  Sean M. Burke  sburke@cpan.org
+
+	* Release 3.02 -- first release version
