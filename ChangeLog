@@ -1,7 +1,14 @@
 Revision history for Perl module Pod::Webserver
-                                        Time-stamp: "2004-06-20 23:48:52 ADT"
+                                        Time-stamp: "2006-02-01 19:54:33 PST"
 
-2004-06-20  Sean M. Burke  sburke@cpan.org
+2006-02-01  Allison Randal <allison@perl.org>
+	* Release 3.04
+
+	Applied a patch from Nicholas Clark to eliminate the dependency
+	on LWP, so the module could be incorporated into the Perl core.
+	Mad props to Nick for the networking code!
+
+2004-06-20  Sean M. Burke <sburke@cpan.org>
 
 	* Release 3.03 -- no code changes; I merely added some extra docs
 	about -T and security and @INC things.
@@ -10,6 +17,6 @@ Revision history for Perl module Pod::Webserver
 	hit this module has become!
 
 
-2004-05-25  Sean M. Burke  sburke@cpan.org
+2004-05-25  Sean M. Burke <sburke@cpan.org>
 
 	* Release 3.02 -- first release version

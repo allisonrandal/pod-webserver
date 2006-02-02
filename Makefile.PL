@@ -21,8 +21,7 @@ WriteMakefile(
    # And finally, things I don't have any particular version in mind for:
    map {; $_ => 0 } qw[
     strict vars Pod::Simple::Progress Pod::Simple::HTMLBatch
-    Pod::Simple::HTML Carp IO::Socket HTTP::Date HTTP::Daemon HTTP::Response
-    HTTP::Request File::Spec::Unix
+    Pod::Simple::HTML Carp IO::Socket File::Spec::Unix
    ]
  }
 );

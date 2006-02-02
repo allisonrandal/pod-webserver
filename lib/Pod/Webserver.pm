@@ -3,7 +3,7 @@ require 5;
 package Pod::Webserver;
 use strict;
 use vars qw( $VERSION @ISA );
-$VERSION = '3.03';
+$VERSION = '3.04';
 
 BEGIN {
   if(defined &DEBUG) { } # no-op
@@ -20,10 +20,6 @@ use Pod::Simple::TiedOutFH;
 use Pod::Simple;
 use Carp ();
 use IO::Socket;
-use HTTP::Date ();
-use HTTP::Daemon;
-use HTTP::Response;
-use HTTP::Request;
 use File::Spec::Unix ();
 @ISA = ('Pod::Simple::HTMLBatch');
 
@@ -38,6 +34,191 @@ httpd() unless caller;
 
 # Run me as:  perl -MPod::HTTP -e Pod::Webserver::httpd
 # or (assuming you have it installed), just run "podwebserver"
+#==========================================================================
+
+# Inlined from HTTP::Date to avoid a dependency
+
+{
+  my @DoW = qw(Sun Mon Tue Wed Thu Fri Sat);
+  my @MoY = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
+
+  sub time2str (;$) {
+    my $time = shift;
+    my ($sec, $min, $hour, $mday, $mon, $year, $wday) = gmtime($time);
+    sprintf("%s, %02d %s %04d %02d:%02d:%02d GMT",
+	    $DoW[$wday],
+	    $mday, $MoY[$mon], $year+1900,
+	    $hour, $min, $sec);
+  }
+}
+
+package Mock::HTTP::Response;
+
+sub new {
+  my ($class, $code) = @_;
+  bless {code=>$code}, $class;
+}
+
+sub DESTROY {};
+
+# The real methods are setter/getters. We only need the setters.
+sub AUTOLOAD {
+  my ($attrib) = $Mock::HTTP::Response::AUTOLOAD =~ /([^:]+)$/;
+  $_[0]->{$attrib} = $_[1];
+}
+
+sub header {
+  my $self = shift;
+  push @{$self->{header}}, @_;
+}
+
+# The real method is a setter/getter. We only need the getter.
+sub content_ref {
+  my $self = shift;
+  \$self->{content};
+}
+
+# sub make_real_response {
+#   my $self = shift;
+#   my $real = HTTP::Response->new();
+#   while (my ($k, $v) = each %$self) {
+#     $real->$k(ref $v ? @$v : $v);
+#   }
+#
+#   $real;
+# }
+
+package Mock::HTTP::Daemon;
+use Socket qw(PF_INET SOCK_STREAM SOMAXCONN inet_aton sockaddr_in);
+
+sub new {
+  my $class = shift;
+  my $self = {@_};
+  $self->{LocalHost} ||= 'localhost';
+
+  # Anonymous file handles the 5.004 way:
+  my $sock = do {local *SOCK; \*SOCK};
+
+  my $proto = getprotobyname('tcp') or die "getprotobyname: $!";
+  socket($sock, PF_INET, SOCK_STREAM, $proto) or die "Can't create socket: $!";
+  my $host = inet_aton($self->{LocalHost})
+    or die "Can't resolve hostname '$self->{LocalHost}'";
+  my $sin = sockaddr_in($self->{LocalPort}, $host);
+  bind $sock, $sin
+    or die "Couldn't bind to $self->{LocalHost}:$self->{LocalPort}: $!";
+  listen $sock, SOMAXCONN or die "Couldn't listen: $!";
+
+  $self->{__sock} = $sock;
+
+  bless $self, $class;
+}
+
+sub url {
+  my $self = shift;
+  "http://$self->{LocalHost}:$self->{LocalPort}/";
+}
+
+sub accept {
+  my $self = shift;
+  my $sock = $self->{__sock};
+
+  my $rin = '';
+  vec($rin, fileno($sock), 1) = 1;
+
+  # Sadly getting a valid returned time from select is not portable
+
+  my $end = $self->{Timeout} + time;
+
+  do {
+    if (select ($rin, undef, undef, $self->{Timeout})) {
+      # Ready for reading;
+
+      my $got = do {local *GOT; \*GOT};
+      $! = "";
+      accept $got, $sock or die "accept failed: $!";
+      return Mock::HTTP::Connection->new($got);
+    }
+  } while (time < $end);
+
+  return undef;
+}
+
+package Mock::HTTP::Request;
+
+sub new {
+  my $class = shift;
+  bless {@_}, $class
+}
+
+sub url {
+  return $_[0]->{url};
+}
+
+sub method {
+  return $_[0]->{method};
+}
+
+package Mock::HTTP::Connection;
+
+sub new {
+  my ($class, $fh) = @_;
+  bless {__fh => $fh}, $class
+}
+
+sub get_request {
+  my $self = shift;
+
+  my $fh = $self->{__fh};
+
+  my $line = <$fh>;
+  if (!defined $line or !($line =~ m!^([A-Z]+)\s+(\S+)\s+HTTP/1\.\d+!)) {
+    $self->send_error(400);
+    return;
+  }
+
+  Mock::HTTP::Request->new(method=>$1, url=>$2);
+}
+
+sub send_error {
+  my ($self, $code) = @_;
+
+  my $message = "HTTP/1.0 $code HTTP error code $code\n" .
+    "Date: " . Pod::Webserver::time2str(time) . "\n" . <<"EOM";
+Content-Type: text/plain
+
+Something went wrong, generating code $code.
+EOM
+
+  $message =~ s/\n/\15\12/gs;
+
+  print {$self->{__fh}} $message;
+}
+
+sub send_response {
+  my ($self, $response) = @_;
+
+  my $message = "HTTP/1.0 200 OK\n"
+    . "Date: " . Pod::Webserver::time2str(time) . "\n"
+    . "Content-Type: $response->{content_type}\n";
+
+  # This is destructive, but for our local purposes it doesn't matter
+  while (my ($name, $value) = splice @{$response->{header}}, 0, 2) {
+    $message .= "$name: $value\n";
+  }
+
+  $message .= "\n$response->{content}";
+
+  $message =~ s/\n/\15\12/gs;
+
+  print {$self->{__fh}} $message;
+}
+
+sub close {
+  close $_[0]->{__fh};
+}
+
+package Pod::Webserver;
+
 #==========================================================================
 
 sub httpd {
@@ -134,7 +315,7 @@ sub _serve_pod {
   $Pod::Simple::HTMLBatch::HTML_EXTENSION
      = $Pod::Simple::HTML::HTML_EXTENSION = '';
 
-  $resp->header('Last-Modified' => HTTP::Date::time2str($modtime) );
+  $resp->header('Last-Modified' => time2str($modtime) );
 
   my $retval;
   if(
@@ -169,7 +350,7 @@ sub new_daemon {
                        $self->httpd_timeout : (5*3600), # exit after 5H idle
   );
   $self->muse( "Starting daemon with options {@opts}" );
-  HTTP::Daemon->new(@opts) || die "Can't start a daemon: $!\nAborting";
+  Mock::HTTP::Daemon->new(@opts) || die "Can't start a daemon: $!\nAborting";
 }
 
 #==========================================================================
@@ -180,8 +361,8 @@ sub prep_for_daemon {
   DEBUG > -1 and print "I am process $$ = perl ", __PACKAGE__, " v$VERSION\n";
 
   $self->{'__daemon_fs'} = {};  # That's where we keep the bodies!!!!
-  $self->{'__expires_as_http_date'} = HTTP::Date::time2str(24*3600+time);
-  $self->{  '__start_as_http_date'} = HTTP::Date::time2str(        time);
+  $self->{'__expires_as_http_date'} = time2str(24*3600+time);
+  $self->{  '__start_as_http_date'} = time2str(        time);
 
   $self->add_to_fs( 'robots.txt', 'text/plain',  join "\cm\cj",
     "User-agent: *",
@@ -318,7 +499,7 @@ sub _serve_thing {
   
   my $fs   = $self->{'__daemon_fs'};
   my $pods = $self->{'__modname2path'};
-  my $resp = HTTP::Response->new(200);
+  my $resp = Mock::HTTP::Response->new(200);
   $resp->content_type( $fs->{"\e$path"} || 'text/html' );
   
   $path =~ s{:+}{/}g;
@@ -399,14 +580,14 @@ Run F<podwebserver -h> for a list of runtime options.
 
 Pod::Webserver is not what you'd call a gaping security hole --
 after all, all it does and could possibly do is serve HTML
-version of anything you could get by typing "perldoc
+versions of anything you could get by typing "perldoc
 SomeModuleName".  Pod::Webserver won't serve files at
 arbitrary paths or anything.
 
 But do consider whether you're revealing anything by 
 basically showing off what versions of modules you've got
 installed; and also consider whether you could be revealing
-any proprietary or in-house modules' documentation.
+any proprietary or in-house module documentation.
 
 And also consider that this exposes the documentation
 of modules (i.e., any Perl files that at all look like
@@ -426,8 +607,8 @@ directories you want in @INC, like so:
 
   perl -T -Isomepath -Imaybesomeotherpath -S podwebserver
 
-You can also use this -I (that's a capital igh, not a
-lowercase ell) trick to add dirs to @INC even
+You can also use the -I trick (that's a capital "igh", 
+not a lowercase "ell") to add dirs to @INC even
 if you're not using -T.  For example:
 
   perl -I/that/thar/Module-Stuff-0.12/lib -S podwebserver
@@ -470,15 +651,15 @@ the Pod in F<./whatever.pl>
 =head1 SEE ALSO
 
 This module is implemented using many CPAN modules,
-including: L<HTTP::Daemon> (part of L<LWP>) L<Pod::Simple::HTMLBatch>
-L<Pod::Simple::HTML> L<Pod::Simple::Search> L<Pod::Simple>
+including: L<Pod::Simple::HTMLBatch> L<Pod::Simple::HTML>
+L<Pod::Simple::Search> L<Pod::Simple>
 
 See also L<Pod::Perldoc> and L<http://search.cpan.org/>
 
 
 =head1 COPYRIGHT AND DISCLAIMERS
 
-Copyright (c) 2004 Sean M. Burke.  All rights reserved.
+Copyright (c) 2004-2006 Sean M. Burke.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
@@ -489,7 +670,9 @@ merchantability or fitness for a particular purpose.
 
 =head1 AUTHOR
 
-Sean M. Burke C<sburke@cpan.org>
+Original author: Sean M. Burke C<sburke@cpan.org>
+
+Maintained by: Allison Randal C<allison@perl.org>
 
 =cut
 
