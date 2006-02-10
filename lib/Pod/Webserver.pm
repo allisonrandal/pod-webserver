@@ -36,25 +36,6 @@ httpd() unless caller;
 # or (assuming you have it installed), just run "podwebserver"
 #==========================================================================
 
-# Inlined from HTTP::Date to avoid a dependency
-
-{
-  my @DoW = qw(Sun Mon Tue Wed Thu Fri Sat);
-  my @MoY = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
-
-  sub time2str (;$) {
-    my $time = shift;
-    my ($sec, $min, $hour, $mday, $mon, $year, $wday) = gmtime($time);
-    sprintf("%s, %02d %s %04d %02d:%02d:%02d GMT",
-	    $DoW[$wday],
-	    $mday, $MoY[$mon], $year+1900,
-	    $hour, $min, $sec);
-  }
-}
-
-#==========================================================================
-package Pod::Webserver;
-
 sub httpd {
   my $self = @_ ? shift(@_) : __PACKAGE__;
   $self = $self->new unless ref $self;
@@ -386,11 +367,29 @@ sub _serve_thing {
 
 #==========================================================================
 
+# Inlined from HTTP::Date to avoid a dependency
+
+{
+  my @DoW = qw(Sun Mon Tue Wed Thu Fri Sat);
+  my @MoY = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
+
+  sub time2str (;$) {
+    my $time = shift;
+    my ($sec, $min, $hour, $mday, $mon, $year, $wday) = gmtime($time);
+    sprintf("%s, %02d %s %04d %02d:%02d:%02d GMT",
+	    $DoW[$wday],
+	    $mday, $MoY[$mon], $year+1900,
+	    $hour, $min, $sec);
+  }
+}
+
+#==========================================================================
+
 package Mock::HTTP::Response;
 
 sub new {
-  my ($class, $code) = @_;
-  bless {code=>$code}, $class;
+  my ($class, $status_code) = @_;
+  bless {code=>$status_code}, $class;
 }
 
 sub DESTROY {};
@@ -411,16 +410,6 @@ sub content_ref {
   my $self = shift;
   \$self->{content};
 }
-
-# sub make_real_response {
-#   my $self = shift;
-#   my $real = HTTP::Response->new();
-#   while (my ($k, $v) = each %$self) {
-#     $real->$k(ref $v ? @$v : $v);
-#   }
-#
-#   $real;
-# }
 
 #==========================================================================
 
@@ -470,7 +459,7 @@ sub accept {
       # Ready for reading;
 
       my $got = do {local *GOT; \*GOT};
-      $! = "";
+      #$! = "";
       accept $got, $sock or die "accept failed: $!";
       return Mock::HTTP::Connection->new($got);
     }
@@ -515,17 +504,17 @@ sub get_request {
     return;
   }
 
-  Mock::HTTP::Request->new(method=>$1, url=>$2);
+  return Mock::HTTP::Request->new(method=>$1, url=>$2);
 }
 
 sub send_error {
-  my ($self, $code) = @_;
+  my ($self, $status_code) = @_;
 
-  my $message = "HTTP/1.0 $code HTTP error code $code\n" .
+  my $message = "HTTP/1.0 $status_code HTTP error code $status_code\n" .
     "Date: " . Pod::Webserver::time2str(time) . "\n" . <<"EOM";
 Content-Type: text/plain
 
-Something went wrong, generating code $code.
+Something went wrong, generating code $status_code.
 EOM
 
   $message =~ s/\n/\15\12/gs;
