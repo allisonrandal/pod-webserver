@@ -52,174 +52,8 @@ httpd() unless caller;
   }
 }
 
-package Mock::HTTP::Response;
-
-sub new {
-  my ($class, $code) = @_;
-  bless {code=>$code}, $class;
-}
-
-sub DESTROY {};
-
-# The real methods are setter/getters. We only need the setters.
-sub AUTOLOAD {
-  my ($attrib) = $Mock::HTTP::Response::AUTOLOAD =~ /([^:]+)$/;
-  $_[0]->{$attrib} = $_[1];
-}
-
-sub header {
-  my $self = shift;
-  push @{$self->{header}}, @_;
-}
-
-# The real method is a setter/getter. We only need the getter.
-sub content_ref {
-  my $self = shift;
-  \$self->{content};
-}
-
-# sub make_real_response {
-#   my $self = shift;
-#   my $real = HTTP::Response->new();
-#   while (my ($k, $v) = each %$self) {
-#     $real->$k(ref $v ? @$v : $v);
-#   }
-#
-#   $real;
-# }
-
-package Mock::HTTP::Daemon;
-use Socket qw(PF_INET SOCK_STREAM SOMAXCONN inet_aton sockaddr_in);
-
-sub new {
-  my $class = shift;
-  my $self = {@_};
-  $self->{LocalHost} ||= 'localhost';
-
-  # Anonymous file handles the 5.004 way:
-  my $sock = do {local *SOCK; \*SOCK};
-
-  my $proto = getprotobyname('tcp') or die "getprotobyname: $!";
-  socket($sock, PF_INET, SOCK_STREAM, $proto) or die "Can't create socket: $!";
-  my $host = inet_aton($self->{LocalHost})
-    or die "Can't resolve hostname '$self->{LocalHost}'";
-  my $sin = sockaddr_in($self->{LocalPort}, $host);
-  bind $sock, $sin
-    or die "Couldn't bind to $self->{LocalHost}:$self->{LocalPort}: $!";
-  listen $sock, SOMAXCONN or die "Couldn't listen: $!";
-
-  $self->{__sock} = $sock;
-
-  bless $self, $class;
-}
-
-sub url {
-  my $self = shift;
-  "http://$self->{LocalHost}:$self->{LocalPort}/";
-}
-
-sub accept {
-  my $self = shift;
-  my $sock = $self->{__sock};
-
-  my $rin = '';
-  vec($rin, fileno($sock), 1) = 1;
-
-  # Sadly getting a valid returned time from select is not portable
-
-  my $end = $self->{Timeout} + time;
-
-  do {
-    if (select ($rin, undef, undef, $self->{Timeout})) {
-      # Ready for reading;
-
-      my $got = do {local *GOT; \*GOT};
-      $! = "";
-      accept $got, $sock or die "accept failed: $!";
-      return Mock::HTTP::Connection->new($got);
-    }
-  } while (time < $end);
-
-  return undef;
-}
-
-package Mock::HTTP::Request;
-
-sub new {
-  my $class = shift;
-  bless {@_}, $class
-}
-
-sub url {
-  return $_[0]->{url};
-}
-
-sub method {
-  return $_[0]->{method};
-}
-
-package Mock::HTTP::Connection;
-
-sub new {
-  my ($class, $fh) = @_;
-  bless {__fh => $fh}, $class
-}
-
-sub get_request {
-  my $self = shift;
-
-  my $fh = $self->{__fh};
-
-  my $line = <$fh>;
-  if (!defined $line or !($line =~ m!^([A-Z]+)\s+(\S+)\s+HTTP/1\.\d+!)) {
-    $self->send_error(400);
-    return;
-  }
-
-  Mock::HTTP::Request->new(method=>$1, url=>$2);
-}
-
-sub send_error {
-  my ($self, $code) = @_;
-
-  my $message = "HTTP/1.0 $code HTTP error code $code\n" .
-    "Date: " . Pod::Webserver::time2str(time) . "\n" . <<"EOM";
-Content-Type: text/plain
-
-Something went wrong, generating code $code.
-EOM
-
-  $message =~ s/\n/\15\12/gs;
-
-  print {$self->{__fh}} $message;
-}
-
-sub send_response {
-  my ($self, $response) = @_;
-
-  my $message = "HTTP/1.0 200 OK\n"
-    . "Date: " . Pod::Webserver::time2str(time) . "\n"
-    . "Content-Type: $response->{content_type}\n";
-
-  # This is destructive, but for our local purposes it doesn't matter
-  while (my ($name, $value) = splice @{$response->{header}}, 0, 2) {
-    $message .= "$name: $value\n";
-  }
-
-  $message .= "\n$response->{content}";
-
-  $message =~ s/\n/\15\12/gs;
-
-  print {$self->{__fh}} $message;
-}
-
-sub close {
-  close $_[0]->{__fh};
-}
-
-package Pod::Webserver;
-
 #==========================================================================
+package Pod::Webserver;
 
 sub httpd {
   my $self = @_ ? shift(@_) : __PACKAGE__;
@@ -548,6 +382,178 @@ sub _serve_thing {
   $resp ? $conn->send_response( $resp ) : $conn->send_error(404);
 
   return;
+}
+
+#==========================================================================
+
+package Mock::HTTP::Response;
+
+sub new {
+  my ($class, $code) = @_;
+  bless {code=>$code}, $class;
+}
+
+sub DESTROY {};
+
+# The real methods are setter/getters. We only need the setters.
+sub AUTOLOAD {
+  my ($attrib) = $Mock::HTTP::Response::AUTOLOAD =~ /([^:]+)$/;
+  $_[0]->{$attrib} = $_[1];
+}
+
+sub header {
+  my $self = shift;
+  push @{$self->{header}}, @_;
+}
+
+# The real method is a setter/getter. We only need the getter.
+sub content_ref {
+  my $self = shift;
+  \$self->{content};
+}
+
+# sub make_real_response {
+#   my $self = shift;
+#   my $real = HTTP::Response->new();
+#   while (my ($k, $v) = each %$self) {
+#     $real->$k(ref $v ? @$v : $v);
+#   }
+#
+#   $real;
+# }
+
+#==========================================================================
+
+package Mock::HTTP::Daemon;
+use Socket qw(PF_INET SOCK_STREAM SOMAXCONN inet_aton sockaddr_in);
+
+sub new {
+  my $class = shift;
+  my $self = {@_};
+  $self->{LocalHost} ||= 'localhost';
+
+  # Anonymous file handles the 5.004 way:
+  my $sock = do {local *SOCK; \*SOCK};
+
+  my $proto = getprotobyname('tcp') or die "getprotobyname: $!";
+  socket($sock, PF_INET, SOCK_STREAM, $proto) or die "Can't create socket: $!";
+  my $host = inet_aton($self->{LocalHost})
+    or die "Can't resolve hostname '$self->{LocalHost}'";
+  my $sin = sockaddr_in($self->{LocalPort}, $host);
+  bind $sock, $sin
+    or die "Couldn't bind to $self->{LocalHost}:$self->{LocalPort}: $!";
+  listen $sock, SOMAXCONN or die "Couldn't listen: $!";
+
+  $self->{__sock} = $sock;
+
+  bless $self, $class;
+}
+
+sub url {
+  my $self = shift;
+  "http://$self->{LocalHost}:$self->{LocalPort}/";
+}
+
+sub accept {
+  my $self = shift;
+  my $sock = $self->{__sock};
+
+  my $rin = '';
+  vec($rin, fileno($sock), 1) = 1;
+
+  # Sadly getting a valid returned time from select is not portable
+
+  my $end = $self->{Timeout} + time;
+
+  do {
+    if (select ($rin, undef, undef, $self->{Timeout})) {
+      # Ready for reading;
+
+      my $got = do {local *GOT; \*GOT};
+      $! = "";
+      accept $got, $sock or die "accept failed: $!";
+      return Mock::HTTP::Connection->new($got);
+    }
+  } while (time < $end);
+
+  return undef;
+}
+
+#==========================================================================
+
+package Mock::HTTP::Request;
+
+sub new {
+  my $class = shift;
+  bless {@_}, $class
+}
+
+sub url {
+  return $_[0]->{url};
+}
+
+sub method {
+  return $_[0]->{method};
+}
+
+#==========================================================================
+package Mock::HTTP::Connection;
+
+sub new {
+  my ($class, $fh) = @_;
+  bless {__fh => $fh}, $class
+}
+
+sub get_request {
+  my $self = shift;
+
+  my $fh = $self->{__fh};
+
+  my $line = <$fh>;
+  if (!defined $line or !($line =~ m!^([A-Z]+)\s+(\S+)\s+HTTP/1\.\d+!)) {
+    $self->send_error(400);
+    return;
+  }
+
+  Mock::HTTP::Request->new(method=>$1, url=>$2);
+}
+
+sub send_error {
+  my ($self, $code) = @_;
+
+  my $message = "HTTP/1.0 $code HTTP error code $code\n" .
+    "Date: " . Pod::Webserver::time2str(time) . "\n" . <<"EOM";
+Content-Type: text/plain
+
+Something went wrong, generating code $code.
+EOM
+
+  $message =~ s/\n/\15\12/gs;
+
+  print {$self->{__fh}} $message;
+}
+
+sub send_response {
+  my ($self, $response) = @_;
+
+  my $message = "HTTP/1.0 200 OK\n"
+    . "Date: " . Pod::Webserver::time2str(time) . "\n"
+    . "Content-Type: $response->{content_type}\n";
+
+  # This is destructive, but for our local purposes it doesn't matter
+  while (my ($name, $value) = splice @{$response->{header}}, 0, 2) {
+    $message .= "$name: $value\n";
+  }
+
+  $message .= "\n$response->{content}";
+
+  $message =~ s/\n/\15\12/gs;
+
+  print {$self->{__fh}} $message;
+}
+
+sub close {
+  close $_[0]->{__fh};
 }
 
 #==========================================================================
