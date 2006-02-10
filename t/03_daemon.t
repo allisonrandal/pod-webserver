@@ -16,16 +16,9 @@ use IO::Socket;
 my $mode = shift || '';
 if ($mode eq 'client') {
     my $port = $ENV{'PODWEBSERVERPORT'} || 8020;
-    my $hostname = 'localhost';
-    my $host = inet_aton($hostname)
-      or die "Can't resolve hostname '$hostname'";
-    my $sin = sockaddr_in($port, $host);
-    my $proto   = getprotobyname('tcp');
-    socket(SOCK, PF_INET, SOCK_STREAM, $proto)
-      or die "Can't create socket: $!";
-    connect(SOCK, $sin)
-      or die "Couldn't connect to $hostname:$port: $!";
-    send (SOCK,"GET Pod/Simple HTTP/1.0\15\12", 0x4);
+    my $sock = IO::Socket::INET->new("localhost:$port")
+      or die "Couldn't connect to localhost:$port: $!";
+    send ($sock,"GET Pod/Simple HTTP/1.0\15\12", 0x4);
     exit;
 }
 
