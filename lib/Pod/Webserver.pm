@@ -165,7 +165,7 @@ sub new_daemon {
                        $self->httpd_timeout : (5*3600), # exit after 5H idle
   );
   $self->muse( "Starting daemon with options {@opts}" );
-  Mock::HTTP::Daemon->new(@opts) || die "Can't start a daemon: $!\nAborting";
+  Pod::Webserver::Daemon->new(@opts) || die "Can't start a daemon: $!\nAborting";
 }
 
 #==========================================================================
@@ -314,7 +314,7 @@ sub _serve_thing {
   
   my $fs   = $self->{'__daemon_fs'};
   my $pods = $self->{'__modname2path'};
-  my $resp = Mock::HTTP::Response->new(200);
+  my $resp = Pod::Webserver::Response->new(200);
   $resp->content_type( $fs->{"\e$path"} || 'text/html' );
   
   $path =~ s{:+}{/}g;
@@ -385,7 +385,7 @@ sub _serve_thing {
 
 #==========================================================================
 
-package Mock::HTTP::Response;
+package Pod::Webserver::Response;
 
 sub new {
   my ($class, $status_code) = @_;
@@ -396,7 +396,7 @@ sub DESTROY {};
 
 # The real methods are setter/getters. We only need the setters.
 sub AUTOLOAD {
-  my ($attrib) = $Mock::HTTP::Response::AUTOLOAD =~ /([^:]+)$/;
+  my ($attrib) = $Pod::Webserver::Response::AUTOLOAD =~ /([^:]+)$/;
   $_[0]->{$attrib} = $_[1];
 }
 
@@ -413,7 +413,7 @@ sub content_ref {
 
 #==========================================================================
 
-package Mock::HTTP::Daemon;
+package Pod::Webserver::Daemon;
 use Socket qw(PF_INET SOCK_STREAM SOMAXCONN inet_aton sockaddr_in);
 
 sub new {
@@ -461,7 +461,7 @@ sub accept {
       my $got = do {local *GOT; \*GOT};
       #$! = "";
       accept $got, $sock or die "accept failed: $!";
-      return Mock::HTTP::Connection->new($got);
+      return Pod::Webserver::Connection->new($got);
     }
   } while (time < $end);
 
@@ -470,7 +470,7 @@ sub accept {
 
 #==========================================================================
 
-package Mock::HTTP::Request;
+package Pod::Webserver::Request;
 
 sub new {
   my $class = shift;
@@ -486,7 +486,7 @@ sub method {
 }
 
 #==========================================================================
-package Mock::HTTP::Connection;
+package Pod::Webserver::Connection;
 
 sub new {
   my ($class, $fh) = @_;
@@ -504,7 +504,7 @@ sub get_request {
     return;
   }
 
-  return Mock::HTTP::Request->new(method=>$1, url=>$2);
+  return Pod::Webserver::Request->new(method=>$1, url=>$2);
 }
 
 sub send_error {

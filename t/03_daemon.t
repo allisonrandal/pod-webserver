@@ -38,7 +38,7 @@ my $daemon;
 eval { $daemon = $ws->new_daemon; };
 if ($@) {
     die $@ . "Try setting the PODWEBSERVERPORT environment variable to
-              another port."; }
+              another port"; }
 
 ok ($daemon);
 my $sock = $daemon->{__sock};
@@ -62,7 +62,7 @@ close CLIENT;
 # Test the response from the daemon.
 my $testfile = 'dummysocket.txt';
 open(DUMMY, ">$testfile");
-$conn = Mock::HTTP::Connection->new(*DUMMY);
+$conn = Pod::Webserver::Connection->new(*DUMMY);
 $ws->_serve_thing($conn, $req);
 $conn->close;
 
