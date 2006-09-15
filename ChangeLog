@@ -1,7 +1,7 @@
 Revision history for Perl module Pod::Webserver
-                                        Time-stamp: "2006-02-01 19:54:33 PST"
+                                        Time-stamp: "2006-09-12 18:40:16 PST"
 
-2006-02-01  Allison Randal <allison@perl.org>
+2006-09-12  Allison Randal <allison@perl.org>
 	* Release 3.04
 
 	Applied a patch from Nicholas Clark to eliminate the dependency
