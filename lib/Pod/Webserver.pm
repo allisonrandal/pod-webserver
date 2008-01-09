@@ -3,7 +3,7 @@ require 5;
 package Pod::Webserver;
 use strict;
 use vars qw( $VERSION @ISA );
-$VERSION = '3.04';
+$VERSION = '3.05';
 
 BEGIN {
   if(defined &DEBUG) { } # no-op
@@ -414,6 +414,8 @@ sub content_ref {
 #==========================================================================
 
 package Pod::Webserver::Daemon;
+use vars qw( $VERSION );
+$VERSION = '3.05';
 use Socket qw(PF_INET SOCK_STREAM SOMAXCONN inet_aton sockaddr_in);
 
 sub new {

@@ -1,5 +1,11 @@
 Revision history for Perl module Pod::Webserver
-                                        Time-stamp: "2006-09-12 18:40:16 PST"
+
+2008-01-09  Allison Randal <allison@perl.org>
+	* Release 3.05
+
+	Added an explicit VERSION to Pod::Webserver::Daemon, to pass the
+	tests on Perl version 5.10.0.
+
 
 2006-09-12  Allison Randal <allison@perl.org>
 	* Release 3.04
